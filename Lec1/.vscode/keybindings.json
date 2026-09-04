@@ -1,0 +1,7 @@
+[
+    {
+        "key": "shift+alt+m",
+        "command": "workbench.action.tasks.runTask",
+        "args": "Run MPI Python"
+    }
+]

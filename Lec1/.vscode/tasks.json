@@ -1,0 +1,34 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run MPI Python",
+            "type": "shell",
+            "command": "mpiexec",
+            "args": [
+                "-np",
+                "${input:numRanks}",
+                "python",
+                "${file}"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "numRanks",
+            "type": "promptString",
+            "description": "Number of MPI processes",
+            "default": "4"
+        }
+    ]
+}
