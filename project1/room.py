@@ -2,8 +2,9 @@ import numpy as np
 from mpi4py import MPI
 from scipy.linalg import solve
 
+from tags import *
 
-TAG_STOP = 0
+
 
 
 class Room:
@@ -21,7 +22,7 @@ class Room:
         # The matrices are stored as the standard 2-D and 1-D shapes used in solving.
         # i.e. A.shape(n,n), u.shape=b.shape(n,1)
         self.A = np.zeros((self.n_vars, self.n_vars), dtype='d')
-        self.u = np.empty(self.n_vars, dtype='d')
+        self.u = np.zeros((self.n_vars,1), dtype='d')
         self.b = np.zeros_like(self.u)
         
         # constraints for the interior points (rhs=0):
@@ -42,7 +43,7 @@ class Room:
         k = self.N[1]
         self.A += np.diagflat(np.ones(self.n_vars-abs(k)),k)
 
-    def set_boundary(self, cond: np.array):
+    def set_boundary(self, _cond: np.array):
         """Set the incoming boundary condition"""
         raise NotImplementedError("implemented in subclasses")
 
@@ -57,7 +58,7 @@ class Room:
         self.u = solve(self.A, self.b)
         return self.get_boundary()
 
-    def run(self):
+    def run(self, w):
         """
         Performs the execution loop.
 
@@ -75,12 +76,21 @@ class Room:
                 dummy = np.empty(1, dtype='d')
                 self.comm.Recv(dummy, source=0, tag=TAG_STOP)
                 break
+
+            elif status.Get_tag() == TAG_SEND_U:
+                dummy = np.empty(1, dtype='d')
+                self.comm.Recv(dummy, source=0, tag=TAG_SEND_U)
+                self.comm.send(self.u, dest=0, tag=TAG_U_FROM_ROOM)
+                continue
         
-            self.comm.Recv([inb_cond, MPI.DOUBLE], source=0, tag=1)
+            self.comm.Recv([inb_cond, MPI.DOUBLE], source=0, tag=TAG_TO_ROOM)
 
+            old_u = self.u.copy()
             outb_cond = self.solve(inb_cond)
+            self.u = w*self.u + (1-w)*old_u
+            print(f"{self.comm.Get_rank()} u shape: {self.u.shape}")
 
-            self.comm.Send([outb_cond, MPI.DOUBLE], dest=0, tag=2)
+            self.comm.Send([outb_cond, MPI.DOUBLE], dest=0, tag=TAG_FROM_ROOM)
 
 
 
@@ -186,6 +196,7 @@ class Room2(Room):
             # step down
             A_nc1[i, x1+1,0] = 1
             A_nc2[i, x+1,-1] = 1
+        
         A_nc1 = A_nc1.reshape(-1,self.n_vars)
         A_nc2 = A_nc2.reshape(-1,self.n_vars)
         self.A_nc = np.array([A_nc1, A_nc2])
