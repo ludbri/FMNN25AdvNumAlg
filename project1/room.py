@@ -87,8 +87,13 @@ class Room:
 
             old_u = self.u.copy()
             outb_cond = self.solve(inb_cond)
+
+            if self.comm.Get_rank() == 2:
+                print(f"u2:\n{self.u.reshape(self.N)}")
+
+            # relax
             self.u = w*self.u + (1-w)*old_u
-            print(f"{self.comm.Get_rank()} u shape: {self.u.shape}")
+            # print(f"{self.comm.Get_rank()} u shape: {self.u.shape}")
 
             self.comm.Send([outb_cond, MPI.DOUBLE], dest=0, tag=TAG_FROM_ROOM)
 
@@ -97,6 +102,7 @@ class Room:
 class Room1(Room):
     def __init__(self, comm: MPI.Comm, gridsize, T):
         super().__init__(comm, [1,1], gridsize, msg_shape=(gridsize-1,))
+        self.u[:] = T['w']
 
         self.b = self.b.reshape(*self.N)
 
@@ -104,9 +110,15 @@ class Room1(Room):
         # the rhs is the Neumann condition and initially 0
         self.A = self.A.reshape(*self.N,*self.N)
         for x in range(1,self.N[0]-1):
+            # self.A[x,-1, :,:] = 0
+            # self.A[x,-1, x,-1] = -1
+            # self.A[x,-1, x,-2] = 1  # one step left
+            # flip:
             self.A[x,-1, :,:] = 0
-            self.A[x,-1, x,-1] = -1
-            self.A[x,-1, x,-2] = 1  # one step left
+            self.A[x,-1, x,-1] = -3
+            self.A[x,-1, x-1,-1] = 1
+            self.A[x,-1, x+1,-1] = 1
+            self.A[x,-1, x,-2] = 1
 
         # North wall
         self.A[0, :, :, :] = 0
@@ -126,8 +138,12 @@ class Room1(Room):
         self.A = self.A.reshape(self.n_vars,self.n_vars)
         self.b = self.b.reshape(self.n_vars,1)
 
+        # print(self.A)
+        # raise Exception
+
     def set_boundary(self, neumann_cond):
-        self.b.reshape(*self.N)[1:-1, -1] = self.h * neumann_cond
+        # self.b.reshape(*self.N)[1:-1, -1] = self.h * neumann_cond
+        self.b.reshape(*self.N)[1:-1, -1] = - self.h * neumann_cond
 
     def get_boundary(self):
         dir_1 = self.u.reshape(*self.N)[1:-1,-1].copy()
@@ -138,6 +154,7 @@ class Room1(Room):
 class Room2(Room):
     def __init__(self, comm: MPI.Comm, gridsize, T):
         super().__init__(comm, [2,1], gridsize, msg_shape=(2, gridsize-1))
+        self.u[:] = T['w']
 
         # half vertical wall size:
         self.n_half = self.N[0] // 2 + 1
@@ -185,17 +202,20 @@ class Room2(Room):
         for i, x in enumerate(range(1,self.c_size+1)):
             x1 = i + self.n_half  # offset to the lower half of the left wall
             # center
-            A_nc1[i, x1,0] = A_nc2[i, x,-1] = -3
-            # step left
-            A_nc2[i, x,-2] = 1
-            # step right
-            A_nc1[i, x1,1] = 1
-            # step up
-            A_nc1[i, x1-1,0] = 1
-            A_nc2[i, x-1,-1] = 1
-            # step down
-            A_nc1[i, x1+1,0] = 1
-            A_nc2[i, x+1,-1] = 1
+            # A_nc1[i, x1,0] = A_nc2[i, x,-1] = -3
+            # # step left
+            # A_nc2[i, x,-2] = 1
+            # # step right
+            # A_nc1[i, x1,1] = 1
+            # # step up
+            # A_nc1[i, x1-1,0] = 1
+            # A_nc2[i, x-1,-1] = 1
+            # # step down
+            # A_nc1[i, x1+1,0] = 1
+            # A_nc2[i, x+1,-1] = 1
+            # flip!
+            A_nc1[i, x1,0] = A_nc2[i, x,-1] = -1
+            A_nc1[i, x1,1] = A_nc2[i, x,-2] = 1
         
         A_nc1 = A_nc1.reshape(-1,self.n_vars)
         A_nc2 = A_nc2.reshape(-1,self.n_vars)
@@ -213,6 +233,7 @@ class Room2(Room):
 class Room3(Room):
     def __init__(self, comm: MPI.Comm, gridsize, T):
         super().__init__(comm, [1,1], gridsize, msg_shape=(gridsize-1,))
+        self.u[:] = T['w']
 
         self.b = self.b.reshape(*self.N)
 
@@ -220,9 +241,15 @@ class Room3(Room):
         # the rhs is the Neumann condition and initially 0
         self.A = self.A.reshape(*self.N,*self.N)
         for x in range(1,self.N[0]-1):
+            # self.A[x,0, :,:] = 0
+            # self.A[x,0, x,0] = -1
+            # self.A[x,0, x,1] = 1  # one step right
+            # flip
             self.A[x,0, :,:] = 0
-            self.A[x,0, x,0] = -1
+            self.A[x,0, x,0] = -3
             self.A[x,0, x,1] = 1  # one step right
+            self.A[x,0, x-1,1] = 1  # one step up
+            self.A[x,0, x+1,1] = 1  # one step left
 
         # North wall
         self.A[0, :, :, :] = 0
@@ -243,7 +270,8 @@ class Room3(Room):
         self.b = self.b.reshape(self.n_vars,1)
 
     def set_boundary(self, neumann_cond):
-        self.b.reshape(*self.N)[1:-1, 0] = self.h * neumann_cond
+        # self.b.reshape(*self.N)[1:-1, 0] = self.h * neumann_cond
+        self.b.reshape(*self.N)[1:-1, 0] = - self.h * neumann_cond
 
     def get_boundary(self):
         dir_2 = self.u.reshape(*self.N)[1:-1,0].copy()

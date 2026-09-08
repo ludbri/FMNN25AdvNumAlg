@@ -7,10 +7,11 @@ import plotting
 
 # TODO: move to sparse matrices? <- for A in the room eq.sys
 # TODO: something looks weird. Maybe direction of Neumann conditions?
+#    have I flipped what is incoming/outgoing?
 
 # parameters
 # roomsizes = np.array([[1,1],[2,1],[1,1]])
-gridsize = 3
+gridsize = 20
 h = 1 / gridsize
 # condition size
 c_size = gridsize - 1
@@ -18,6 +19,7 @@ c_size = gridsize - 1
 T = {"w": 15,
      "h": 40,
      "wf": 5}
+iterations = 10
 w = 0.8
 
 comm = MPI.Comm.Clone(MPI.COMM_WORLD)
@@ -33,12 +35,12 @@ rank = comm.Get_rank()
 
 if rank == 0:
     # coordination
-    dirs = np.zeros((2,c_size), dtype='d')
+    dirs = T['w'] * np.ones((2,c_size), dtype='d')
     neus = np.zeros((2,c_size), dtype='d')
     dummy = np.empty(1, dtype='d')
     u = [None] * 3
 
-    for k in range(5):
+    for k in range(iterations):
         # Solve room 2:
         comm.Send([dirs, MPI.DOUBLE], dest=2, tag=TAG_TO_ROOM)
         comm.Recv([neus, MPI.DOUBLE], source=2, tag=TAG_FROM_ROOM)
@@ -47,19 +49,21 @@ if rank == 0:
         comm.Isend([neus[0], MPI.DOUBLE], dest=1, tag=TAG_TO_ROOM)
         comm.Isend([neus[1], MPI.DOUBLE], dest=3, tag=TAG_TO_ROOM)
 
+        print(f"\n\niter {k},\ndirs:\n{dirs}")
+
         comm.Irecv([dirs[0], MPI.DOUBLE], source=1, tag=TAG_FROM_ROOM)
         comm.Recv([dirs[1], MPI.DOUBLE], source=3, tag=TAG_FROM_ROOM)
 
-        print(f"iter {k}, dirs: {dirs}")
+        print(f"neus:\n{neus}")
 
-        for r in range(1,4):
-            comm.Isend([dummy, MPI.DOUBLE], dest=r, tag=TAG_SEND_U)
+        if k == iterations-1:
+            for r in range(1,4):
+                comm.Isend([dummy, MPI.DOUBLE], dest=r, tag=TAG_SEND_U)
 
-        for r in range(1,4):
-            u[r-1] = comm.recv(source=r, tag=TAG_U_FROM_ROOM)
-            print(f"from {r}: shape of u: {u[r-1].shape}")
+            for r in range(1,4):
+                u[r-1] = comm.recv(source=r, tag=TAG_U_FROM_ROOM)
 
-        plotting.plot_u(u, show_labels=False)
+            plotting.plot_u(u, show_labels=False, timeout=None)
 
 
     # Send shutdown commands

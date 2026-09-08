@@ -4,7 +4,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 
-def plot_u(us: list[np.array], show_labels = False):
+def plot_u(us: list[np.array], show_labels = False, timeout=2000):
     """Plot the u values (i.e., temperature of the rooms)
     Written with some help by copilot"""
     fig = plt.figure(figsize=(9, 6))
@@ -30,6 +30,7 @@ def plot_u(us: list[np.array], show_labels = False):
         im = ax.imshow(u,
                        vmin=vmin,
                        vmax=vmax,
+                       cmap = "hot",
                        aspect="auto") # , cmap="viridis"
         ax.set_xticks([])
         ax.set_yticks([])
@@ -60,9 +61,10 @@ def plot_u(us: list[np.array], show_labels = False):
         )
     cbar.set_label("Value")
 
-    timer = fig.canvas.new_timer(interval=1000) # ms
-    timer.add_callback(lambda: plt.close(fig))
-    timer.start()
+    if timeout is not None:
+        timer = fig.canvas.new_timer(interval=timeout) # ms
+        timer.add_callback(lambda: plt.close(fig))
+        timer.start()
 
     plt.show()
 
