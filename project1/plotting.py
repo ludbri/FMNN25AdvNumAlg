@@ -16,8 +16,6 @@ def plot_u(us: list[np.array], show_labels = False, timeout=2000):
 
     gs = GridSpec(room_height*2-1, 3,
                   figure=fig,
-                #   width_ratios=[1, 1, 1],
-                #   height_ratios=[1]*(room_height*2-1),
                   wspace=0.0, # no gaps
                   hspace=0.0)
 

@@ -5,12 +5,9 @@ from mpi4py import MPI
 from tags import *
 import plotting
 
-# TODO: move to sparse matrices? <- for A in the room eq.sys
-# TODO: something looks weird. Maybe direction of Neumann conditions?
-#    have I flipped what is incoming/outgoing?
+# TODO: move to sparse matrices? <- for A in the room's eq.sys
 
 # parameters
-# roomsizes = np.array([[1,1],[2,1],[1,1]])
 gridsize = 20
 h = 1 / gridsize
 # condition size
@@ -49,12 +46,8 @@ if rank == 0:
         comm.Isend([neus[0], MPI.DOUBLE], dest=1, tag=TAG_TO_ROOM)
         comm.Isend([neus[1], MPI.DOUBLE], dest=3, tag=TAG_TO_ROOM)
 
-        print(f"\n\niter {k},\ndirs:\n{dirs}")
-
         comm.Irecv([dirs[0], MPI.DOUBLE], source=1, tag=TAG_FROM_ROOM)
         comm.Recv([dirs[1], MPI.DOUBLE], source=3, tag=TAG_FROM_ROOM)
-
-        print(f"neus:\n{neus}")
 
         if k == iterations-1:
             for r in range(1,4):

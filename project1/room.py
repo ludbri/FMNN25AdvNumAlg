@@ -26,7 +26,7 @@ class Room:
         self.b = np.zeros_like(self.u)
         
         # constraints for the interior points (rhs=0):
-        # boundaries will later be overwritten based on the specific room
+        # boundaries will later be overwritten by the specific room's subclass
         # center
         k = 0
         self.A += np.diagflat(-4*np.ones(self.n_vars-abs(k)),k)
@@ -62,7 +62,9 @@ class Room:
         """
         Performs the execution loop.
 
-        The loop is exited when a signal with tag=TAG_STOP is received
+        The loop is exited when a signal with tag=TAG_STOP is received.
+
+        w is the relaxation parameter.
         """
         status = MPI.Status()
 
@@ -88,12 +90,8 @@ class Room:
             old_u = self.u.copy()
             outb_cond = self.solve(inb_cond)
 
-            if self.comm.Get_rank() == 2:
-                print(f"u2:\n{self.u.reshape(self.N)}")
-
             # relax
             self.u = w*self.u + (1-w)*old_u
-            # print(f"{self.comm.Get_rank()} u shape: {self.u.shape}")
 
             self.comm.Send([outb_cond, MPI.DOUBLE], dest=0, tag=TAG_FROM_ROOM)
 
@@ -110,15 +108,11 @@ class Room1(Room):
         # the rhs is the Neumann condition and initially 0
         self.A = self.A.reshape(*self.N,*self.N)
         for x in range(1,self.N[0]-1):
-            # self.A[x,-1, :,:] = 0
-            # self.A[x,-1, x,-1] = -1
-            # self.A[x,-1, x,-2] = 1  # one step left
-            # flip:
-            self.A[x,-1, :,:] = 0
-            self.A[x,-1, x,-1] = -3
-            self.A[x,-1, x-1,-1] = 1
-            self.A[x,-1, x+1,-1] = 1
-            self.A[x,-1, x,-2] = 1
+            self.A[x,-1, :,:] = 0     # zero out the rows
+            self.A[x,-1, x,-1] = -3   # point on boundary
+            self.A[x,-1, x-1,-1] = 1  # one step up
+            self.A[x,-1, x+1,-1] = 1  # one step down
+            self.A[x,-1, x,-2] = 1    # one step left 
 
         # North wall
         self.A[0, :, :, :] = 0
@@ -138,11 +132,7 @@ class Room1(Room):
         self.A = self.A.reshape(self.n_vars,self.n_vars)
         self.b = self.b.reshape(self.n_vars,1)
 
-        # print(self.A)
-        # raise Exception
-
     def set_boundary(self, neumann_cond):
-        # self.b.reshape(*self.N)[1:-1, -1] = self.h * neumann_cond
         self.b.reshape(*self.N)[1:-1, -1] = - self.h * neumann_cond
 
     def get_boundary(self):
@@ -201,21 +191,8 @@ class Room2(Room):
         A_nc2 = np.zeros_like(A_nc1)
         for i, x in enumerate(range(1,self.c_size+1)):
             x1 = i + self.n_half  # offset to the lower half of the left wall
-            # center
-            # A_nc1[i, x1,0] = A_nc2[i, x,-1] = -3
-            # # step left
-            # A_nc2[i, x,-2] = 1
-            # # step right
-            # A_nc1[i, x1,1] = 1
-            # # step up
-            # A_nc1[i, x1-1,0] = 1
-            # A_nc2[i, x-1,-1] = 1
-            # # step down
-            # A_nc1[i, x1+1,0] = 1
-            # A_nc2[i, x+1,-1] = 1
-            # flip!
-            A_nc1[i, x1,0] = A_nc2[i, x,-1] = -1
-            A_nc1[i, x1,1] = A_nc2[i, x,-2] = 1
+            A_nc1[i, x1,0] = A_nc2[i, x,-1] = -1  # point on boundary
+            A_nc1[i, x1,1] = A_nc2[i, x,-2] = 1   # one step left
         
         A_nc1 = A_nc1.reshape(-1,self.n_vars)
         A_nc2 = A_nc2.reshape(-1,self.n_vars)
@@ -241,13 +218,9 @@ class Room3(Room):
         # the rhs is the Neumann condition and initially 0
         self.A = self.A.reshape(*self.N,*self.N)
         for x in range(1,self.N[0]-1):
-            # self.A[x,0, :,:] = 0
-            # self.A[x,0, x,0] = -1
-            # self.A[x,0, x,1] = 1  # one step right
-            # flip
-            self.A[x,0, :,:] = 0
-            self.A[x,0, x,0] = -3
-            self.A[x,0, x,1] = 1  # one step right
+            self.A[x,0, :,:] = 0    # zero out the rows
+            self.A[x,0, x,0] = -3   # point on boundary
+            self.A[x,0, x,1] = 1    # one step right
             self.A[x,0, x-1,1] = 1  # one step up
             self.A[x,0, x+1,1] = 1  # one step left
 
@@ -270,7 +243,6 @@ class Room3(Room):
         self.b = self.b.reshape(self.n_vars,1)
 
     def set_boundary(self, neumann_cond):
-        # self.b.reshape(*self.N)[1:-1, 0] = self.h * neumann_cond
         self.b.reshape(*self.N)[1:-1, 0] = - self.h * neumann_cond
 
     def get_boundary(self):
