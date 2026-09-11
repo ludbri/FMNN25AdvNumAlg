@@ -66,3 +66,92 @@ def plot_u(us: list[np.array], show_labels = False, timeout=2000):
 
     plt.show()
 
+
+def plot_u_ext(us: list[np.array], show_labels = False, timeout=2000):
+    """Plot the u values (i.e., temperature of the rooms)
+    Written with some help by copilot"""
+    fig = plt.figure(figsize=(9, 6))
+
+    room_width = int(np.sqrt(us[0].size))
+    room_height = int(us[0].size/room_width)
+    print(room_width,room_height)
+    vmin = min(u.min() for u in us)
+    vmax = max(u.max() for u in us)
+
+    gs = GridSpec(room_height*2-1, room_width*3,
+                  figure=fig,
+                  wspace=0.0, # no gaps
+                  hspace=0.0)
+
+    ax1 = fig.add_subplot(gs[room_height:, :room_width])
+    ax2 = fig.add_subplot(gs[:, room_width:room_width*2])
+    ax3 = fig.add_subplot(gs[:room_height, room_width*2:])
+    ax4 = fig.add_subplot(gs[room_height:room_height+room_height//2, room_width*2:room_width*2+room_width//2])
+
+    for ax, u in zip((ax1, ax2, ax3), us[:-1]):
+        u = u.reshape(-1,room_width)
+        im = ax.imshow(u,
+                       vmin=vmin,
+                       vmax=vmax,
+                       cmap = "hot",
+                       aspect="auto") # , cmap="viridis"
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(2)
+        # Add labels
+        if show_labels:
+            for i in range(u.shape[0]):
+                for j in range(u.shape[1]):
+                    ax.text(
+                        j, i, # x, y position
+                        f"{u[i, j]:.1f}", # label
+                        ha="center",
+                        va="center",
+                        color="white"
+                    )
+    # for room 4:
+    u = us[-1].reshape(room_height//2+1,-1)[1:,:]
+    ax = ax4
+    im = ax.imshow(u,
+                    vmin=vmin,
+                    vmax=vmax,
+                    cmap = "hot",
+                    aspect="auto") # , cmap="viridis"
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(2)
+    # Add labels
+    if show_labels:
+        for i in range(u.shape[0]):
+            for j in range(u.shape[1]):
+                ax.text(
+                    j, i, # x, y position
+                    f"{u[i, j]:.1f}", # label
+                    ha="center",
+                    va="center",
+                    color="white"
+                )
+
+    plt.tight_layout()
+    fig.subplots_adjust(left=0, right=1, bottom=0.05, top=0.95)
+    # Shared colorbar below all rooms
+    # cbar = fig.colorbar(
+    #     im,
+    #     ax=[ax1, ax2, ax3],
+    #     orientation="horizontal",
+    #     pad=0.01,
+    #     shrink=0.8
+    #     )
+    # cbar.set_label("Value")
+
+    if timeout is not None:
+        timer = fig.canvas.new_timer(interval=timeout) # ms
+        timer.add_callback(lambda: plt.close(fig))
+        timer.start()
+
+    plt.show()
+

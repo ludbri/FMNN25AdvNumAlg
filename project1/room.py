@@ -15,7 +15,7 @@ class Room:
         self.comm = comm
         self.roomsize = roomsize
         self.h = 1/gridsize
-        self.N = tuple(gridsize*r + 1 for r in roomsize)
+        self.N = tuple(int(gridsize*r + 1) for r in roomsize)
         self.n_vars = self.N[0] * self.N[1]
         self.msg_shape = msg_shape  # shape of boundary condition messages
 
@@ -249,3 +249,134 @@ class Room3(Room):
         dir_2 = self.u.reshape(*self.N)[1:-1,0].copy()
         return dir_2
 
+
+# ==========================================
+#            extension rooms below
+# ==========================================
+class Room2Ext(Room):
+    def __init__(self, comm: MPI.Comm, gridsize, T):
+        super().__init__(comm, [2,1], gridsize, msg_shape=(3, gridsize-1))
+        self.u[:] = T['w']
+
+        # half vertical wall size:
+        self.n_half = self.N[0] // 2 + 1
+        # condition size
+        self.c_size = self.n_half - 2
+        self.c_size_small = self.c_size // 2 # rounded down
+
+        self.b = self.b.reshape(*self.N)
+        self.A = self.A.reshape(*self.N,*self.N)
+
+        # Note: east/west before north/south to override corners with fixed heat walls
+        # West wall top
+        self.A[:self.n_half,0, :,:] = 0
+        self.A[:self.n_half,0, :self.n_half,0] = np.eye(self.n_half)
+        self.b[:self.n_half,0] = T["w"]
+        # West wall bottom - gamma1
+        self.A[self.n_half:-1,0, :,:] = 0
+        self.A[self.n_half:-1,0, self.n_half:-1, 0] = np.eye(self.c_size)
+        # Note: initial Dirichlet conditions are sent by the controller
+
+        # East wall top - gamma2
+        self.A[1:self.n_half-1,-1, :,:] = 0
+        self.A[1:self.n_half-1,-1, 1:self.n_half-1,-1] = np.eye(self.c_size)
+        # Note: initial Dirichlet conditions are sent by the controller
+        # East wall midpoint
+        self.A[self.n_half-1,-1, :,:] = 0
+        self.A[self.n_half-1,-1, self.n_half-1,-1] = 1
+        self.b[self.n_half-1,-1] = T["w"]
+        # East wall upper bottom - gamma3
+        self.A[self.n_half:self.n_half+self.c_size_small,-1,
+               :,:] = 0
+        self.A[self.n_half:self.n_half+self.c_size_small,-1,
+               self.n_half:self.n_half+self.c_size_small,-1] = np.eye(self.c_size_small)
+        # Note: initial Dirichlet conditions are sent by the controller
+        # East wall lower bottom
+        self.A[self.n_half+self.c_size_small:,-1, :,:] = 0
+        self.A[self.n_half+self.c_size_small:,-1, self.n_half+self.c_size_small:,-1] = np.eye(self.n_half//2+1)
+        self.b[self.n_half+self.c_size_small:,-1] = T["w"]
+
+        # North wall
+        self.A[0, :, :, :] = 0
+        self.A[0, :, 0, :] = np.eye(self.N[1])
+        self.b[0, :] = T["h"]
+
+        # South wall
+        self.A[-1, :, :, :] = 0
+        self.A[-1, :, -1, :] = np.eye(self.N[1])
+        self.b[-1, :] = T["wf"]
+
+        self.A = self.A.reshape(self.n_vars,self.n_vars)
+        self.b = self.b.reshape(self.n_vars,1)
+
+        # Matrices for outgoing conditions (Neumann - derivative)
+        A_nc1 = np.zeros((self.c_size,*self.N),dtype='d')
+        A_nc2 = np.zeros_like(A_nc1)
+        A_nc3 = np.zeros_like(A_nc1)
+        for i, x in enumerate(range(1,self.c_size+1)):
+            x1 = i + self.n_half  # offset to the lower half of the left wall
+            A_nc1[i, x1,0] = A_nc2[i, x,-1] = -1  # point on boundary
+            A_nc1[i, x1,1] = A_nc2[i, x,-2] = 1   # one step in
+        for i, x in enumerate(range(1,self.c_size+1)):
+            x1 = i + self.n_half  # offset to the lower half of the left wall
+            A_nc3[i, x1,-1] = -1  # point on boundary
+            A_nc3[i, x1,-2] = 1  # one step in
+        
+        A_nc1 = A_nc1.reshape(-1,self.n_vars)
+        A_nc2 = A_nc2.reshape(-1,self.n_vars)
+        A_nc3 = A_nc3.reshape(-1,self.n_vars)
+        self.A_nc = np.array([A_nc1, A_nc2, A_nc3])
+
+    def set_boundary(self, dirichlet_conds):
+        self.b.reshape(*self.N)[self.n_half:-1,0] = dirichlet_conds[0]
+        self.b.reshape(*self.N)[1:self.n_half-1,-1] = dirichlet_conds[1]
+        self.b.reshape(*self.N)[self.n_half:self.n_half+self.c_size_small,-1] = dirichlet_conds[2,:self.c_size_small]
+
+    def get_boundary(self):
+        neus = self.A_nc @ self.u
+        return neus
+    
+
+class Room4(Room):
+    def __init__(self, comm: MPI.Comm, gridsize, T):
+        super().__init__(comm, [0.5,0.5], gridsize, msg_shape=((gridsize)//2-1,))
+        self.u[:] = T['w']
+        # condition size
+        self.c_size = (gridsize)//2-1
+
+        self.b = self.b.reshape(*self.N)
+
+        # West wall (first in order to later override corners as fixed values)
+        # the rhs is the Neumann condition and initially 0
+        self.A = self.A.reshape(*self.N,*self.N)
+        for x in range(1,self.N[0]-1):
+            self.A[x,0, :,:] = 0    # zero out the rows
+            self.A[x,0, x,0] = -3   # point on boundary
+            self.A[x,0, x,1] = 1    # one step right
+            self.A[x,0, x-1,1] = 1  # one step up
+            self.A[x,0, x+1,1] = 1  # one step left
+
+        # North wall
+        self.A[0, :, :, :] = 0
+        self.A[0, :, 0, :] = np.eye(self.N[1])
+        self.b[0, :] = T["w"]
+
+        # East wall
+        self.A[:,-1,:,:] = 0
+        self.A[:,-1,:,-1] = np.eye(self.N[0])
+        self.b[:,-1] = T["w"]
+
+        # South wall
+        self.A[-1, :, :, :] = 0
+        self.A[-1, :, -1, :] = np.eye(self.N[1])
+        self.b[-1, :] = T["h"]
+
+        self.A = self.A.reshape(self.n_vars,self.n_vars)
+        self.b = self.b.reshape(self.n_vars,1)
+
+    def set_boundary(self, neumann_cond):
+        self.b.reshape(*self.N)[1:-1, 0] = - self.h * neumann_cond
+
+    def get_boundary(self):
+        dir_2 = self.u.reshape(*self.N)[1:-1,0].copy()
+        return dir_2
